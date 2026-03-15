@@ -5,11 +5,6 @@ import utils
 from datetime import datetime
 from streamlit import session_state as ss
 
-# After analyzing the statistics under different assumptions, I assume that graders,
-#   on average, spend 4 min reading before they make their first entry in GS. It appears this
-#   is actually too large for most graders.
-MIN_BEFORE_FIRST_ENTRY = 4.0
-
 def handle_graderActivity_upload_change():
     """Callback function to update session state when canvas file is uploaded."""
     if st.session_state['graderActivity_uploader_key'] is not None:
@@ -32,51 +27,62 @@ def handle_graderActivity_upload_change():
     
 def handle_grader_change():
     selected_grader = ss.selected_grader
-    analyze_grader(selected_grader)
+    analyze_one_grader(selected_grader)
 
-def analyze_grader(grader):
-    ss.grader_df['start'] = ss.grader_df['Time'] - pd.Timedelta(minutes = MIN_BEFORE_FIRST_ENTRY)
+def analyze_one_grader(grader):
+
+    # We need to distinguish between actual breaks and time spent, for example, reading reports
+    #   To do this, we use the common approach of saying breaks longer than the 95th percentile
+    #   are actual breaks. This avoids problems with different types of assignments having
+    #   different grading patterns, and different graders having different behaviors.
+    temp_df = ss.grader_df[ss.grader_df['Grader'] == grader].copy()
+    temp_df['break_time'] = temp_df['Time'].diff()
+    break_distribution = temp_df['break_time'].dt.total_seconds() / 60
+    percentile_95 = temp_df['break_time'].quantile(0.95) # , interpolation='linear')
+    
+    ss.grader_df['start'] = ss.grader_df['Time'] - percentile_95
     ss.grader_df['end'] = ss.grader_df['Time']
 
-    one_grader_df = ss.grader_df[ss.grader_df['Grader'] == grader].copy()
+    oneGradersActivity_df = ss.grader_df[ss.grader_df['Grader'] == grader].copy()
     
-    one_grader_df['max_end'] = one_grader_df['end'].cummax().shift().fillna(one_grader_df['start'].min())
-    one_grader_df['new_group'] = one_grader_df['start'] > one_grader_df['max_end']
-    one_grader_df['group_id'] = one_grader_df['new_group'].cumsum()
+    oneGradersActivity_df['max_end'] = oneGradersActivity_df['end'].cummax().shift().fillna(oneGradersActivity_df['start'].min())
+    oneGradersActivity_df['new_group'] = oneGradersActivity_df['start'] > oneGradersActivity_df['max_end']
+    oneGradersActivity_df['group_id'] = oneGradersActivity_df['new_group'].cumsum()
     
-    merged_df = one_grader_df.groupby('group_id').agg(
+    oneGradersSessions_df = oneGradersActivity_df.groupby('group_id').agg(
         merged_start=('start', 'min'),
         merged_end=('end', 'max')
     )
     
     # Calculate duration and sum
-    merged_df['duration'] = merged_df['merged_end'] - merged_df['merged_start']
-    merged_df['break'] = merged_df['merged_end'].diff() - merged_df['duration']
-    total_time = merged_df['duration'].sum().total_seconds()/3600
-    numStudents =  one_grader_df['Student\'s name'].nunique()
+    oneGradersSessions_df['duration'] = oneGradersSessions_df['merged_end'] - oneGradersSessions_df['merged_start']
+    oneGradersSessions_df['break'] = oneGradersSessions_df['merged_end'].diff() - oneGradersSessions_df['duration']
+    total_time = oneGradersSessions_df['duration'].sum().total_seconds()/3600
+    numStudents =  oneGradersActivity_df['Student\'s name'].nunique()
+    
     
     cols_to_drop = ['start', 'end', 'max_end', 'new_group', 'group_id']
-    one_grader_df = one_grader_df.drop(columns = cols_to_drop)
+    oneGradersActivity_df = oneGradersActivity_df.drop(columns = cols_to_drop)
     
-    ss.one_grader_df = one_grader_df
-    ss.merged_df = merged_df
+    ss.oneGradersActivity_df = oneGradersActivity_df
+    ss.oneGradersSessions_df = oneGradersSessions_df
     
     return total_time, numStudents
 
 def calculate_statistics():
-    output_df = pd.DataFrame(ss.graders, columns=['Grader'])
+    graderSummary_df = pd.DataFrame(ss.graders, columns=['Grader'])
     
-    output_df['numGraded'] = np.nan
-    output_df['Time grading (hr)'] = np.nan
-    output_df['Time/student (min)'] = np.nan    
+    graderSummary_df['numGraded'] = np.nan
+    graderSummary_df['Time grading (hr)'] = np.nan
+    graderSummary_df['Time/student (min)'] = np.nan    
 
     for grader in ss.graders:
-        total_time, numStudents = analyze_grader(grader)
-        output_df.loc[output_df['Grader'] == grader, 'numGraded'] = numStudents
-        output_df.loc[output_df['Grader'] == grader, 'Time grading (hr)'] = round(total_time, 2)
-        output_df.loc[output_df['Grader'] == grader, 'Time/student (min)'] = round(60 * total_time/numStudents, 1)
+        total_time, numStudents = analyze_one_grader(grader)
+        graderSummary_df.loc[graderSummary_df['Grader'] == grader, 'numGraded'] = numStudents
+        graderSummary_df.loc[graderSummary_df['Grader'] == grader, 'Time grading (hr)'] = round(total_time, 2)
+        graderSummary_df.loc[graderSummary_df['Grader'] == grader, 'Time/student (min)'] = round(60 * total_time/numStudents, 1)
 
-    ss.output_df = output_df
+    ss.graderSummary_df = graderSummary_df
 
 def reset_uploader():
     """Function to clear the uploaded files and show the uploader again."""
@@ -84,12 +90,12 @@ def reset_uploader():
 
 if 'grader_df' not in st.session_state:
     ss['grader_df'] = None
-if 'output_df' not in ss:
-    ss.output_df = pd.DataFrame()
-if 'one_grader_df' not in ss:
-    ss.one_grader_df = pd.DataFrame()
-if 'merged_df' not in ss:
-    ss.merged_df = pd.DataFrame()
+if 'graderSummary_df' not in ss:
+    ss.graderSummary_df = pd.DataFrame()
+if 'oneGradersActivity_df' not in ss:
+    ss.oneGradersActivity_df = pd.DataFrame()
+if 'oneGradersSessions_df' not in ss:
+    ss.oneGradersSessions_df = pd.DataFrame()
 
 st.title('Analyze Grader Activity')
 
@@ -112,10 +118,10 @@ else:
     if st.button("Calculate statistics", type = 'primary'):
         calculate_statistics()               
     
-    st.dataframe(ss.output_df)
-    if len(ss.output_df) > 1:
-        median_hrs = ss.output_df['Time grading (hr)'].median()
-        median_min = ss.output_df['Time/student (min)'].median()
+    st.dataframe(ss.graderSummary_df)
+    if len(ss.graderSummary_df) > 1:
+        median_hrs = ss.graderSummary_df['Time grading (hr)'].median()
+        median_min = ss.graderSummary_df['Time/student (min)'].median()
         st.write(f"Median grading time was {median_hrs} hrs or {median_min} min/student.")
 
     st.selectbox(
@@ -128,9 +134,9 @@ else:
 
     if ss.selected_grader is not None:
         st.write('### All grader activity')
-        st.dataframe(ss.one_grader_df)
+        st.dataframe(ss.oneGradersActivity_df)
         
         st.write('### All grader grading sessions')    
-        st.dataframe(ss.merged_df)
+        st.dataframe(ss.oneGradersSessions_df)
 
 utils.shared_sidebar()

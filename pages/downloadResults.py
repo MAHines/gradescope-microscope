@@ -53,6 +53,7 @@ def GS_login_alt():
     """ Allow the user to log in to Gradescope using any mechanism. The method times out after
             3 minutes. """
        
+    # Add options to allow us to download evaluations from Gradescope
     driver = webdriver.Chrome() # Initialize WebDriver
     try:
         driver.get("https://www.gradescope.com/login")
@@ -156,8 +157,8 @@ def get_assignment_data():
         basis. """
 
     driver = ss['driver']
-    combined_df = ss['combined_df']
-    activity_df = pd.DataFrame()
+    allActivity_df = ss['allActivity_df']
+    graderActivity_df = pd.DataFrame()
     for item in ss['all_items']:
         question_id, question_num, rubric_items = item
         for rubric_item in rubric_items:
@@ -191,8 +192,8 @@ def get_assignment_data():
                 rubric_item_df = pd.read_html(StringIO(table_html))[0]
                 rubric_item_df.drop(columns=['Sections'], inplace=True)
                 
-                grader_activity_df = rubric_item_df.copy()
-                grader_activity_df.drop(columns = ['Student\'s name'])
+                activity_df = rubric_item_df.copy()
+                activity_df.drop(columns = ['Student\'s name'])
                 
                 # Rename the columns
                 new_graded_time = 'G time ' + str(question_num) + ' ' + str(rubric_item_name)
@@ -200,7 +201,7 @@ def get_assignment_data():
                 
                 # Need to test for duplicate column names because of shortening
                 while True:
-                    if new_graded_time not in combined_df.columns:
+                    if new_graded_time not in allActivity_df.columns:
                         break
                     new_graded_time += '…'
                     new_last_graded += '…'
@@ -212,12 +213,12 @@ def get_assignment_data():
                 # Set the index
                 # rubric_item_df = rubric_item_df.set_index('Student\'s name')
                 
-                combined_df = pd.merge(combined_df, rubric_item_df, on = 'Student\'s name', how = 'left')
-                activity_df = pd.concat([activity_df, grader_activity_df])
+                allActivity_df = pd.merge(allActivity_df, rubric_item_df, on = 'Student\'s name', how = 'left')
+                graderActivity_df = pd.concat([graderActivity_df, activity_df])
     
-    activity_df = activity_df.reset_index(drop=True)
-    ss['activity_df'] = activity_df
-    ss['combined_df'] = combined_df
+    graderActivity_df = graderActivity_df.reset_index(drop=True)
+    ss['graderActivity_df'] = graderActivity_df
+    ss['allActivity_df'] = allActivity_df
     
 def get_students_in_order():
     """ We need to be able to match a student name with the number the TAs were assigned. To 
@@ -237,13 +238,14 @@ def get_students_in_order():
 
     table_html = table_element.get_attribute('outerHTML')  
     students_df = pd.read_html(StringIO(table_html))[0]
-    ss['combined_df'] = students_df[['User']]
-    ss['combined_df'].index += 1
-    ss['combined_df'] = ss['combined_df'].rename(columns = {'User': 'Student\'s name'})
-    ss['combined_df'] = ss['combined_df'].rename_axis(index="order")
-    ss['combined_df'] = ss['combined_df'].reset_index()
+    ss['allActivity_df'] = students_df[['User']]
+    ss['allActivity_df'].index += 1
+    ss['allActivity_df'] = ss['allActivity_df'].rename(columns = {'User': 'Student\'s name'})
+    ss['allActivity_df'] = ss['allActivity_df'].rename_axis(index="order")
+    ss['allActivity_df'] = ss['allActivity_df'].reset_index()
     
 def process_the_assignment():
+    ss.downloaded_assignment = ss.selected_assignment   # Prevents problems upon page switching
     if 'driver' not in ss:
         GS_login_alt()
     get_questions()
@@ -367,6 +369,17 @@ def handle_assignment_change():
     """ Handles assignment selection change drop down """
     selected_assignment = ss.selected_assignment
     ss['assignment_id'] = ss.assignment_dict[selected_assignment]
+
+def handle_evaluations_download():
+    driver = ss.driver
+    url = ('https://gradescope.com/courses/' + str(ss.course_id) + '/assignments/'
+            + str(ss.assignment_id) + '/export_evaluations')
+    driver.get(url)
+    
+def handle_gradescope_logout():
+    driver = ss.driver
+    driver.quit()
+    ss.driver = None    
                     
 if 'driver' not in ss:
     ss['driver'] = None
@@ -378,6 +391,12 @@ if 'assignment_id' not in ss:
     ss.assignment_id = None
 if 'course_id' not in ss:
     ss.course_id = None
+if 'selected_course' not in ss:
+    ss.selected_course = None
+if 'selected_assignment' not in ss:
+    ss.selected_assignment = None
+if 'downloaded_assignment' not in ss:
+    ss.downloaded_assignment = None
 
 st.title('Download Assignment Grading Data')
 
@@ -385,9 +404,11 @@ text_str = "Use the button below to log in to Gradescope. After pushing the butt
 text_str += "3 minutes to complete the login in the Chromium browser. Leave the browser window open "
 text_str += "after you finish."
 st.write(text_str)
-if st.button("Log in to Gradescope", type = 'primary'):
-    GS_login_alt()
-    get_courses()
+
+if ss.driver is None:
+    if st.button("Log in to Gradescope", type = 'primary'):
+        GS_login_alt()
+        get_courses()
 
 if ss['course_dict'] is not None:
     st.selectbox(
@@ -414,30 +435,46 @@ if ss.course_id is not None and ss.assignment_id is not None:
     text_str += 'given the opportunity to save the grading data in csv\'s for later analysis.'
     st.write(text_str)
     if st.button("Start Downloading", type = 'primary'):
-        st.write("Downloading in progress...")
+        status_placeholder = st.empty()
+        status_placeholder.write("Downloading in progress...")
         process_the_assignment()
+        status_placeholder.empty()
 
-if 'activity_df' in ss:
-    st.dataframe(ss['combined_df'])
+if 'graderActivity_df' in ss:
+    st.dataframe(ss['allActivity_df'])
     
-    twoWords = ss.selected_assignment.split()[:2] # Use first two words of assignment
+    twoWords = ss.downloaded_assignment.split()[:2] # Use first two words of assignment
     shortAssignmentName  = "_".join(twoWords) 
     file_name = shortAssignmentName + '_all_activity' + '_' + datetime.now().strftime("%b_%d") + '.csv'
-    combined_data = ss['combined_df'].to_csv(index = False, header = True).encode('utf-8')
+    combined_data = ss['allActivity_df'].to_csv(index = False, header = True).encode('utf-8')
     st.download_button(label = 'Download All Activity Report as csv',
                     data = combined_data,
                     file_name = file_name,
                     mime = 'text/csv',
                     type = 'primary')
 
-    st. dataframe(ss['activity_df']) 
+    st. dataframe(ss['graderActivity_df']) 
     
     file_name = shortAssignmentName + '_grader_activity' + '_' + datetime.now().strftime("%b_%d") + '.csv'
-    grader_activity_data = ss['activity_df'].to_csv(index = False, header = True).encode('utf-8')
+    grader_activity_data = ss['graderActivity_df'].to_csv(index = False, header = True).encode('utf-8')
     st.download_button(label = 'Download Grader Activity Report as csv',
                     data = grader_activity_data,
                     file_name = file_name,
                     mime = 'text/csv',
                     type = 'primary')
-
+                    
+    text_str = 'You can use the button below to \'Export Evaluations\' for this assignment. '
+    text_str += 'Your Chromium window may say \'insecure download blocked.\' If so, select '
+    text_str += '\'Keep\' and then click the download icon ↗️.'
+    st.write(text_str)
+    
+    st.button('Download Evaluations folder',
+                type = 'primary',
+                on_click = handle_evaluations_download)
+        
+if ss.driver is not None:
+    st.button('Log out of Gradescope',
+                type = 'primary',
+                on_click = handle_gradescope_logout)
+                
 utils.shared_sidebar()
