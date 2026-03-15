@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from streamlit import session_state as ss
 
 def handle_graderActivity_upload_change():
-    """Callback function to update session state when canvas file is uploaded."""
+    """Callback function to load graderActivity df, then calculate statistics """
     if st.session_state['graderActivity_uploader_key'] is not None:
         grader_df = pd.read_csv(st.session_state['graderActivity_uploader_key']
                                  )
@@ -31,13 +31,14 @@ def handle_grader_change():
     analyze_one_grader(selected_grader)
 
 def analyze_one_grader(grader):
+    """ Analyzes the activity of a single grader. Called repeatedly to analyze all graders. """
 
     # We need to distinguish between actual breaks and time spent, for example, reading reports
     #   To do this, we use the common approach of saying breaks longer than the 95th percentile
     #   are actual breaks. This avoids problems with different types of assignments having
     #   different grading patterns, and different graders having different behaviors. Nevertheless,
     #   there needs to be an upper limit on this, because some people are taking a break after each 
-    #   report. Also, our times are only saved with 1 min resolution
+    #   report (fair enough). Also, our times are only saved with 1 min resolution
     temp_df = ss.grader_df[ss.grader_df['Grader'] == grader].copy()
     temp_df['pause_time'] = temp_df['Time'].diff()
     percentile_95 = min(temp_df['pause_time'].quantile(0.95), timedelta(minutes = 7.0))
@@ -47,6 +48,9 @@ def analyze_one_grader(grader):
 
     oneGradersActivity_df = ss.grader_df[ss.grader_df['Grader'] == grader].copy()
     
+    # This is the key bit. We convert a log of individual actions into distinct "sessions" based
+    #   an gaps in time. We then add up all of the individual sessions to get the total time
+    #   spent grading
     oneGradersActivity_df['max_end'] = oneGradersActivity_df['end'].cummax().shift().fillna(oneGradersActivity_df['start'].min())
     oneGradersActivity_df['new_group'] = oneGradersActivity_df['start'] > oneGradersActivity_df['max_end']
     oneGradersActivity_df['group_id'] = oneGradersActivity_df['new_group'].cumsum()
@@ -61,8 +65,7 @@ def analyze_one_grader(grader):
     oneGradersSessions_df['break'] = oneGradersSessions_df['merged_end'].diff() - oneGradersSessions_df['duration']
     total_time = oneGradersSessions_df['duration'].sum().total_seconds()/3600
     numStudents =  oneGradersActivity_df['Student\'s name'].nunique()
-    
-    
+        
     cols_to_drop = ['start', 'end', 'max_end', 'new_group', 'group_id']
     oneGradersActivity_df = oneGradersActivity_df.drop(columns = cols_to_drop)
     
@@ -72,6 +75,7 @@ def analyze_one_grader(grader):
     return total_time, numStudents
 
 def calculate_statistics():
+    """ Loops through all of the graders, calculating statistics for each. """
     graderSummary_df = pd.DataFrame(ss.graders, columns=['Grader'])
     
     graderSummary_df['numGraded'] = np.nan
