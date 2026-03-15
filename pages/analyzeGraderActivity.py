@@ -24,6 +24,7 @@ def handle_graderActivity_upload_change():
         ss.graders = grader_df['Grader'].unique().tolist()
 
         ss['grader_df'] = grader_df
+        calculate_statistics()
     
 def handle_grader_change():
     selected_grader = ss.selected_grader
@@ -36,11 +37,10 @@ def analyze_one_grader(grader):
     #   are actual breaks. This avoids problems with different types of assignments having
     #   different grading patterns, and different graders having different behaviors. Nevertheless,
     #   there needs to be an upper limit on this, because some people are taking a break after each 
-    #   report.
+    #   report. Also, our times are only saved with 1 min resolution
     temp_df = ss.grader_df[ss.grader_df['Grader'] == grader].copy()
-    temp_df['break_time'] = temp_df['Time'].diff()
-    break_distribution = temp_df['break_time'].dt.total_seconds() / 60
-    percentile_95 = min(temp_df['break_time'].quantile(0.95), timedelta(minutes = 7.0))
+    temp_df['pause_time'] = temp_df['Time'].diff()
+    percentile_95 = min(temp_df['pause_time'].quantile(0.95), timedelta(minutes = 7.0))
     
     ss.grader_df['start'] = ss.grader_df['Time'] - percentile_95
     ss.grader_df['end'] = ss.grader_df['Time']
@@ -116,9 +116,6 @@ if st.session_state['grader_df'] is None:
     )
 else:
     st.write('#### :gray[Grader activity already uploaded.]')    
-    
-    if st.button("Calculate statistics", type = 'primary'):
-        calculate_statistics()               
     
     st.dataframe(ss.graderSummary_df)
     if len(ss.graderSummary_df) > 1:
