@@ -66,6 +66,21 @@ using this module. There is no need to do this if you prefer to log in manually.
 
 This module allow certain user settings to be stored in prefs.toml in the .streamlit folder
 
+## Installation
+– Use Anaconda to make an env contains the following packages:  
+  
+    beautifulsoup4  
+    keyring  
+    numpy  
+    pandas  
+    plotly  
+    selenium  
+    streamlit  
+    tomlkit  
+ 
+– cd to the folder that will contain Gradescope Microscope  
+– git clone https://github.com/MAHines/Gradescope-Microscope.git   
+
 
 ### Running Gradescope Microscope from the command line
 – cd to Gradescope-Microscope folder  
