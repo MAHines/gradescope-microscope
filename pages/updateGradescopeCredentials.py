@@ -24,8 +24,8 @@ def show_credentials_dialog():
 
 st.title('Store External Gradescope Credentials')
 
-text_str = "This is not necessary in the current implementation, but I'm leaving it in case "
-text_str += "someone wants to go back to username/password authentication (instead of SSO)."
+text_str = "This is necessary if you want to use username/password authentication (instead of SSO). "
+text_str += "You can change your login type in Settings."
 st.write(text_str)
 if st.button("Update Gradescope Credentials",
                 type = 'primary'):

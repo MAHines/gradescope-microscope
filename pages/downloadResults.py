@@ -7,6 +7,7 @@ import keyring as kr
 import os
 from streamlit import session_state as ss
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -15,12 +16,19 @@ from bs4 import BeautifulSoup
 import time
 import utils
 
-def GS_login():
+def GS_login_password():
     """ Allows a user to log in with an e-mail address and password stored in the login
-            keychain. This method does not allow for SSO authentication and is not currently
-            used. It does work, though. """
+            keychain. """
     
     # Initialize WebDriver
+    # This process can be run headless by uncommenting the commands below; however, the
+    #   speedup was (suprisingly) quite modest. Better to run headed
+#     chrome_options = Options()
+#     chrome_options.add_argument("--headless=new")
+#     chrome_options.add_argument("--window-size=1920,1080")
+#     chrome_options.add_argument("--disable-gpu") 
+#     chrome_options.add_argument("--no-sandbox") 
+#     driver = webdriver.Chrome(options=chrome_options) # Initialize WebDriver
     driver = webdriver.Chrome()
     driver.get("https://www.gradescope.com/login")
     
@@ -49,12 +57,12 @@ def GS_login():
     
     ss['driver'] = driver # Store the driver for later access.
 
-def GS_login_alt():
+def GS_login_user():
     """ Allow the user to log in to Gradescope using any mechanism. The method times out after
             3 minutes. """
        
-    # Add options to allow us to download evaluations from Gradescope
-    driver = webdriver.Chrome() # Initialize WebDriver
+    # Initialize webdriver
+    driver = webdriver.Chrome()
     try:
         driver.get("https://www.gradescope.com/login")
             
@@ -69,7 +77,13 @@ def GS_login_alt():
         st.write((f"Page load timed out: {e.message}"))
     except WebDriverException as e:
         st.write(f"WebDriver exception occurred: {e.message}") # Handle browser crash or network issues
-    
+
+def GS_login():
+    if ss['toml_dict']['user']['password_login']:
+        GS_login_password()
+    else:
+        GS_login_user() 
+           
 def get_questions():
     """ Returns a list of (question_id, question_num) pairs obtained from the page accessed by the statistics
         button in the web interface """
@@ -152,13 +166,12 @@ def get_all_rubric_items():
 def get_assignment_data():
     """ Once all of the questions and rubric items are extracted from each question in the
         assignment, this function collects all of the grading data for each rubric item.
-        The output is two dataframes: one containing a grading record for each student who
-        submitted an assignment, the other contains all of the grading activity on a TA-by-TA
-        basis. """
+        The output is a dataframe that contains a grading record for each student who
+        submitted an assignment """
 
     driver = ss['driver']
-    allActivity_df = ss['allActivity_df']
-    graderActivity_df = pd.DataFrame()
+    activity_df = ss['activity_df']
+    current_year = datetime.now().year  # May be wrong if we are analyzing historical data
     for item in ss['all_items']:
         question_id, question_num, rubric_items = item
         for rubric_item in rubric_items:
@@ -180,6 +193,7 @@ def get_assignment_data():
                 
             numApplied = int(visible_div.text.split()[0])
             
+            # We load each individual table into rubric_item_df, reformat, then merge with activity_df
             if numApplied > 0:
                 try:
                     table_element = WebDriverWait(driver, 10).until(
@@ -192,8 +206,11 @@ def get_assignment_data():
                 rubric_item_df = pd.read_html(StringIO(table_html))[0]
                 rubric_item_df.drop(columns=['Sections'], inplace=True)
                 
-                activity_df = rubric_item_df.copy()
-                activity_df.drop(columns = ['Student\'s name'])
+                # Convert the Graded time column to a proper datetime
+                time_part = rubric_item_df['Graded time'].str.extract(r'^(.*?)\s*\(')[0].str.strip()
+                full_datetime_str = str(current_year) + ' ' + time_part.str.replace(" at ", " ")
+                # rubric_item_df['Graded time'] = full_datetime_str
+                rubric_item_df['Graded time'] = pd.to_datetime(full_datetime_str, format='%Y %b %d %I:%M%p')
                 
                 # Rename the columns
                 new_graded_time = 'G time ' + str(question_num) + ' ' + str(rubric_item_name)
@@ -201,7 +218,7 @@ def get_assignment_data():
                 
                 # Need to test for duplicate column names because of shortening
                 while True:
-                    if new_graded_time not in allActivity_df.columns:
+                    if new_graded_time not in activity_df.columns:
                         break
                     new_graded_time += '…'
                     new_last_graded += '…'
@@ -213,12 +230,9 @@ def get_assignment_data():
                 # Set the index
                 # rubric_item_df = rubric_item_df.set_index('Student\'s name')
                 
-                allActivity_df = pd.merge(allActivity_df, rubric_item_df, on = 'Student\'s name', how = 'left')
-                graderActivity_df = pd.concat([graderActivity_df, activity_df])
+                activity_df = pd.merge(activity_df, rubric_item_df, on = 'Student\'s name', how = 'left')
     
-    graderActivity_df = graderActivity_df.reset_index(drop=True)
-    ss['graderActivity_df'] = graderActivity_df
-    ss['allActivity_df'] = allActivity_df
+    ss['activity_df'] = activity_df
     
 def get_students_in_order():
     """ We need to be able to match a student name with the number the TAs were assigned. To 
@@ -238,16 +252,16 @@ def get_students_in_order():
 
     table_html = table_element.get_attribute('outerHTML')  
     students_df = pd.read_html(StringIO(table_html))[0]
-    ss['allActivity_df'] = students_df[['User']]
-    ss['allActivity_df'].index += 1
-    ss['allActivity_df'] = ss['allActivity_df'].rename(columns = {'User': 'Student\'s name'})
-    ss['allActivity_df'] = ss['allActivity_df'].rename_axis(index="order")
-    ss['allActivity_df'] = ss['allActivity_df'].reset_index()
+    ss['activity_df'] = students_df[['User']]
+    ss['activity_df'].index += 1
+    ss['activity_df'] = ss['activity_df'].rename(columns = {'User': 'Student\'s name'})
+    ss['activity_df'] = ss['activity_df'].rename_axis(index="order")
+    ss['activity_df'] = ss['activity_df'].reset_index()
     
 def process_the_assignment():
     ss.downloaded_assignment = ss.selected_assignment   # Prevents problems upon page switching
     if 'driver' not in ss:
-        GS_login_alt()
+        GS_login()
     get_questions()
     get_students_in_order()
     get_all_rubric_items()
@@ -383,6 +397,8 @@ def handle_gradescope_logout():
                     
 if 'driver' not in ss:
     ss['driver'] = None
+if 'toml_dict' not in st.session_state:
+    utils.read_prefs()
 if 'course_dict' not in ss:
     ss.course_dict = None
 if 'assignment_dict' not in ss:
@@ -400,14 +416,14 @@ if 'downloaded_assignment' not in ss:
 
 st.title('Download Assignment Grading Data')
 
-text_str = "Use the button below to log in to Gradescope. After pushing the button, you have "
-text_str += "3 minutes to complete the login in the Chromium browser. Leave the browser window open "
-text_str += "after you finish."
+text_str = "Use the button below to log in to Gradescope. If you are NOT using automated password login,  "
+text_str += "you will have 3 min to complete the login in the browser window after you push the button. "
+text_str += "In either case, leave the browser window open after you finish."
 st.write(text_str)
 
 if ss.driver is None:
     if st.button("Log in to Gradescope", type = 'primary'):
-        GS_login_alt()
+        GS_login()
         get_courses()
 
 if ss['course_dict'] is not None:
@@ -432,33 +448,26 @@ if ss.course_id is not None and ss.assignment_id is not None:
     text_str = 'After pushing the button, the script will loop through the assignment in Gradescope, '
     text_str += 'finding all of the rubric items. It will then loop through each rubric item and '
     text_str += 'record the grading activity associated with that item. At the end, you will be '
-    text_str += 'given the opportunity to save the grading data in csv\'s for later analysis.'
+    text_str += 'given the opportunity to save the grading data in a csv for analysis.'
     st.write(text_str)
     if st.button("Start Downloading", type = 'primary'):
         status_placeholder = st.empty()
+        start_time = time.perf_counter()
         status_placeholder.write("Downloading in progress...")
         process_the_assignment()
-        status_placeholder.empty()
+        end_time = time.perf_counter()
+        elapsed_time = (end_time - start_time)/60
+        status_placeholder.write(f"Elapsed time: {elapsed_time:.1f} min")
 
-if 'graderActivity_df' in ss:
-    st.dataframe(ss['allActivity_df'])
+if 'activity_df' in ss:
+    st.dataframe(ss['activity_df'])
     
     twoWords = ss.downloaded_assignment.split()[:2] # Use first two words of assignment
     shortAssignmentName  = "_".join(twoWords) 
-    file_name = shortAssignmentName + '_all_activity' + '_' + datetime.now().strftime("%b_%d") + '.csv'
-    combined_data = ss['allActivity_df'].to_csv(index = False, header = True).encode('utf-8')
-    st.download_button(label = 'Download All Activity Report as csv',
+    file_name = shortAssignmentName + '_GS_activity' + '_' + datetime.now().strftime("%b_%d") + '.csv'
+    combined_data = ss['activity_df'].to_csv(index = False, header = True).encode('utf-8')
+    st.download_button(label = 'Download Gradescope Activity Report as csv',
                     data = combined_data,
-                    file_name = file_name,
-                    mime = 'text/csv',
-                    type = 'primary')
-
-    st. dataframe(ss['graderActivity_df']) 
-    
-    file_name = shortAssignmentName + '_grader_activity' + '_' + datetime.now().strftime("%b_%d") + '.csv'
-    grader_activity_data = ss['graderActivity_df'].to_csv(index = False, header = True).encode('utf-8')
-    st.download_button(label = 'Download Grader Activity Report as csv',
-                    data = grader_activity_data,
                     file_name = file_name,
                     mime = 'text/csv',
                     type = 'primary')

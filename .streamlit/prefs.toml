@@ -1,0 +1,8 @@
+# This is the preferences file for Gradescope Microscope.
+
+[user]
+version = "1.0"            # Version number. Currently irrelevant.
+password_login = true  # Use password (not SSO) login to Gradescope
+use_grader_white_list = false  # Use grader white list to filter graders
+grader_white_list = "['Cynthia Kinsland', 'Melissa Hines', 'Julie Laudenschlager', 'Virginia McGhee', 'Mike Patterson']"                # White listed graders GS name (e.g., Cynthia Kinsland, Melissa Hines)
+
