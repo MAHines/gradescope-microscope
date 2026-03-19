@@ -16,8 +16,10 @@ from bs4 import BeautifulSoup
 import time
 import utils
 
+TIMEOUT = 30
+
 def GS_login_password():
-    """ Allows a user to log in with an e-mail address and password stored in the login
+    """ Allows a user to log in with an e-mail address and password stored in the user's login
             keychain. """
     
     # Initialize WebDriver
@@ -33,7 +35,7 @@ def GS_login_password():
     driver.get("https://www.gradescope.com/login")
     
     # Use WebDriverWait to handle dynamic elements
-    wait = WebDriverWait(driver, 30)
+    wait = WebDriverWait(driver, TIMEOUT)
     
     # Locate fields and send keys
     email_field = wait.until(EC.presence_of_element_located((By.NAME, "session[email]")))
@@ -51,7 +53,7 @@ def GS_login_password():
     login_button.click()
     
     div_class_name = 'courseList--term'
-    wait = WebDriverWait(driver, 30).until(
+    wait = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.CLASS_NAME, div_class_name))
             )
     
@@ -79,6 +81,7 @@ def GS_login_user():
         st.write(f"WebDriver exception occurred: {e.message}") # Handle browser crash or network issues
 
 def GS_login():
+    """ Logs in to Gradescope either using a stored password or "manually." """
     if ss['toml_dict']['user']['password_login']:
         GS_login_password()
     else:
@@ -95,7 +98,7 @@ def get_questions():
     div_class_name = 'statisticsTable'
     try:
         # Wait until the element with the specified class is visible
-        visible_div = WebDriverWait(driver, 30).until(
+        visible_div = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.CLASS_NAME, div_class_name))
         )
     
@@ -132,7 +135,7 @@ def get_rubric_items(question_index):
     div_class_name = 'statisticsSummary'
     try:
         # Wait until the element with the specified class is visible
-        visible_div = WebDriverWait(driver, 30).until(
+        visible_div = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.CLASS_NAME, div_class_name))
         )
     except TimeoutException:
@@ -183,7 +186,7 @@ def get_assignment_data():
             div_class_name = '.table--header.table--header-withFilter'
             try:
                 # Wait until the element with the specified class is visible
-                visible_div = WebDriverWait(driver, 30).until(
+                visible_div = WebDriverWait(driver, TIMEOUT).until(
                     EC.visibility_of_element_located((By.CSS_SELECTOR, div_class_name))
                 )
             except TimeoutException:
@@ -196,7 +199,7 @@ def get_assignment_data():
             # We load each individual table into rubric_item_df, reformat, then merge with activity_df
             if numApplied > 0:
                 try:
-                    table_element = WebDriverWait(driver, 30).until(
+                    table_element = WebDriverWait(driver, TIMEOUT).until(
                         EC.presence_of_element_located((By.XPATH, "//table[@id='DataTables_Table_0']")) # Replace with your table's XPath or CSS selector
                     )
                 except TimeoutException:
@@ -244,7 +247,7 @@ def get_students_in_order():
     driver.get(url)
     try:
         # Wait until the element with the specified class is visible
-         table_element = WebDriverWait(driver, 30).until(
+         table_element = WebDriverWait(driver, TIMEOUT).until(
                     EC.presence_of_element_located((By.XPATH, "//table[@id='question_submissions']")) # Replace with your table's XPath or CSS selector
                 )
     except TimeoutException:
@@ -259,6 +262,7 @@ def get_students_in_order():
     ss['activity_df'] = ss['activity_df'].reset_index()
     
 def process_the_assignment():
+    """ After the user has selected a course and assignment, this function does all of the processing. """
     ss.downloaded_assignment = ss.selected_assignment   # Prevents problems upon page switching
     if 'driver' not in ss:
         GS_login()
@@ -298,7 +302,7 @@ def get_courses(recent = True):
     div_class_name = 'courseList'
     try:
         # Wait until the element with the specified class is visible
-        visible_div = WebDriverWait(driver, 30).until(
+        visible_div = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.CLASS_NAME, div_class_name))
         )
     
@@ -348,7 +352,7 @@ def get_assignments(course_id):
     div_class_name = 'l-table'
     try:
         # Wait until the element with the specified class is visible
-        visible_div = WebDriverWait(driver, 30).until(
+        visible_div = WebDriverWait(driver, TIMEOUT).until(
             EC.visibility_of_element_located((By.CLASS_NAME, div_class_name))
         )
     

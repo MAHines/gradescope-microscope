@@ -85,8 +85,9 @@ def get_next_count(counts, curVal):
     return nextVal
     
 def get_top_three(row):
+    """Function to get the top three graders for a single student."""
     # Use Counter to get the frequency of each string in the row (as a list)
-    counts = Counter(row.values).most_common(5)
+    counts = Counter(row.values).most_common(5) # Do 5 because we may be white listing some graders
     
     output = []
     if ss.use_grader_white_list_input_local:
@@ -108,6 +109,7 @@ def get_top_three(row):
     return pd.Series(output, index=['MC', 'nMC', 'nnMC'])
 
 def highlight_outlier_graders(row):
+    """Function to highlight the cells containing nMC and nnMC graders."""
     # Get the target values from 'nMC' and 'nnMC' columns for the current row
     target_values = [row['nMC'], row['nnMC']]
     
@@ -123,6 +125,7 @@ def highlight_outlier_graders(row):
     return styles
 
 def create_grader_df():
+    """ Function to make a df containing 3 columns: Student, Time (graded), and Grader """
 
     allActivity_df = ss.allActivity_df
     
@@ -146,7 +149,7 @@ def create_grader_df():
     calculate_statistics()
     
 def handle_allActivity_upload():
-    """Callback function to load allActivity df, then calculate statistics """
+    """Callback function to load allActivity df from csv, then calculate statistics """
     if st.session_state['allActivity_uploader_key'] is not None:
         allActivity_df = pd.read_csv(ss['allActivity_uploader_key'])
         allActivity_df['Student\'s name'] = allActivity_df['Student\'s name'].str.replace(r'\s*\(.*?\)', '', regex=True) # Strip e-mail addresses for brevity
