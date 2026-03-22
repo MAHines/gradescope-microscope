@@ -77,7 +77,7 @@ using this module. There is no need to do this if you prefer to log in manually.
 
 This module allow certain user settings to be stored in prefs.toml in the .streamlit folder
 
-## Installation
+### Installation
 – Use Anaconda and pip install to make an env contains the following packages:  
   
     beautifulsoup4  
