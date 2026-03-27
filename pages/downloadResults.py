@@ -358,7 +358,7 @@ def get_assignment_data():
                     
                 table_html = table_element.get_attribute('outerHTML')  
                 rubric_item_df = pd.read_html(StringIO(table_html))[0]
-                rubric_item_df.drop(columns=['Sections'], inplace=True)
+                rubric_item_df.drop(columns=['Sections'], inplace=True, errors='ignore')
                 
                 # Convert the Graded time column to a proper datetime
                 time_part = rubric_item_df['Graded time'].str.extract(r'^(.*?)\s*\(')[0].str.strip()
@@ -436,8 +436,7 @@ def process_the_assignment():
     ss.questionName_dict = None
     get_regrades_df()
     
-    # Fix the year, particularly for Fall semester wher grading goes into January
-    
+    # Fix the year, particularly for Fall semester wher grading goes into January    
     cols = [col for col in ss.activity_df.columns if col.startswith('G time')]
     ss.activity_df[cols] = ss.activity_df[cols].apply(pd.to_datetime)
     fix_the_year(ss.activity_df, cols, ss.term, ss.year)
@@ -599,11 +598,15 @@ def get_section_with_min_students():
     except TimeoutException:
         st.write(f"Timed out waiting for the div with class '{div_class_name}' to become visible.") 
         
-    soup = BeautifulSoup(driver.page_source, 'lxml')   # was 'html.parser'
+    ss.section_with_min_studentsID = None
+    soup = BeautifulSoup(driver.page_source, 'lxml')
 
+    blankState = soup.find('div', class_='blankState blankState-withSmallPadding')
+    if blankState:
+        return      # No section data
+    
     element_with_props = soup.find('div', attrs={'data-react-class': 'CourseSections'})
     
-    ss.section_with_min_studentsID = None
     if element_with_props:
         props_json_string = element_with_props['data-react-props']
         data_props = json.loads(props_json_string)
