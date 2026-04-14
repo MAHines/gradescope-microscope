@@ -8,6 +8,7 @@ import utils
 import ast
 from datetime import datetime, timedelta
 from streamlit import session_state as ss
+from pathlib import Path
 
 def handle_grader_change():
     selected_grader = ss.selected_grader
@@ -63,6 +64,11 @@ def analyze_one_grader(grader):
     
     ss.oneGradersActivity_df = oneGradersActivity_df
     ss.oneGradersSessions_df = oneGradersSessions_df
+    ss.oneGradersDailyActivity_df = oneGradersSessions_df.groupby(oneGradersSessions_df['merged_start'].dt.date)['duration'].sum().reset_index()
+    ss.oneGradersDailyActivity_df = ss.oneGradersDailyActivity_df.rename(columns ={'merged_start': 'Day'})
+    ss.oneGradersDailyActivity_df['duration_min'] = ss.oneGradersDailyActivity_df['duration'].dt.total_seconds()/60
+    ss.oneGradersDailyActivity_df = ss.oneGradersDailyActivity_df.drop(columns = ['duration'])
+    ss.oneGradersDailyActivity_df['Name'] = grader
         
     oneRegradersActivity_df, oneRegradersSessions_df = analyze_one(ss.regrading_acts_df, grader)   
     regraders_total_time = oneRegradersSessions_df['duration'].sum().total_seconds()/3600
@@ -70,6 +76,11 @@ def analyze_one_grader(grader):
     
     ss.oneRegradersActivity_df = oneRegradersActivity_df
     ss.oneRegradersSessions_df = oneRegradersSessions_df
+    ss.oneRegradersDailyActivity_df = oneRegradersSessions_df.groupby(oneRegradersSessions_df['merged_start'].dt.date)['duration'].sum().reset_index()
+    ss.oneRegradersDailyActivity_df = ss.oneRegradersDailyActivity_df.rename(columns ={'merged_start': 'Day'})
+    ss.oneRegradersDailyActivity_df['duration_min'] = ss.oneRegradersDailyActivity_df['duration'].dt.total_seconds()/60
+    ss.oneRegradersDailyActivity_df = ss.oneRegradersDailyActivity_df.drop(columns = ['duration'])
+    ss.oneRegradersDailyActivity_df['Name'] = grader
     
     return graders_total_time, graders_numStudents, regraders_total_time, regraders_numStudents
 
@@ -82,7 +93,9 @@ def calculate_statistics():
     graderSummary_df['Grading time/student (min)'] = np.nan    
     graderSummary_df['numRegraded'] = np.nan
     graderSummary_df['Regrading time (hr)'] = np.nan
-    graderSummary_df['Regrading time/student (min)'] = np.nan    
+    graderSummary_df['Regrading time/student (min)'] = np.nan 
+    graderDailySummary_df = None
+    regraderDailySummary_df = None   
 
     for grader in ss.graders:
         graders_total_time, graders_numStudents, regraders_total_time, regraders_numStudents = analyze_one_grader(grader)
@@ -90,12 +103,21 @@ def calculate_statistics():
         graderSummary_df.loc[graderSummary_df['Grader'] == grader, 'Grading time (hr)'] = round(graders_total_time, 2)
         if graders_numStudents > 0:
             graderSummary_df.loc[graderSummary_df['Grader'] == grader, 'Grading time/student (min)'] = round(60 * graders_total_time/graders_numStudents, 1)
+            graderDailySummary_df = pd.concat([df for df in [graderDailySummary_df, ss.oneGradersDailyActivity_df] if df is not None], ignore_index=True)
         graderSummary_df.loc[graderSummary_df['Grader'] == grader, 'numRegraded'] = regraders_numStudents
         graderSummary_df.loc[graderSummary_df['Grader'] == grader, 'Regrading time (hr)'] = round(regraders_total_time, 2)
         if regraders_numStudents > 0:
             graderSummary_df.loc[graderSummary_df['Grader'] == grader, 'Regrading time/student (min)'] = round(60 * regraders_total_time/regraders_numStudents, 1)
+            regraderDailySummary_df = pd.concat([df for df in [regraderDailySummary_df, ss.oneRegradersDailyActivity_df] if df is not None], ignore_index=True)
 
+    # Reorder columns and store dataframes
+    col_order = ['Name', 'Day', 'duration_min']
+    graderDailySummary_df = graderDailySummary_df[col_order]
     ss.graderSummary_df = graderSummary_df
+    ss.graderDailySummary_df = graderDailySummary_df
+    if regraderDailySummary_df is not None:
+        regraderDailySummary_df = regraderDailySummary_df[col_order]
+        ss.regraderDailySummary_df = regraderDailySummary_df
 
 def reset_uploader():
     """Function to clear the uploaded files and show the uploader again."""
@@ -182,6 +204,7 @@ def handle_allActivity_upload():
     """Callback function to load allActivity df from csv, then calculate statistics """
     if ss['allActivity_uploader_key'] is not None:
         all_sheets = pd.read_excel(ss.allActivity_uploader_key, sheet_name = None)
+        ss.uploaded_fileName = ss.allActivity_uploader_key.name
         
         regrades_df = None
         for sheet_name, df in all_sheets.items():
@@ -214,7 +237,6 @@ def handle_allActivity_upload():
         new_cols = temp_df.apply(get_top_three, axis=1)
         new_cols.columns = ['MC', 'nMC', 'nnMC']
         allActivity_df = pd.concat([allActivity_df, new_cols], axis=1)
-        # allActivity_df[['MC', 'nMC', 'nnMC']] = temp_df.apply(get_top_three, axis=1) # Gives a performance warning?
         multipleGraders_df = allActivity_df[allActivity_df['nMC'] != '–'].copy()
         first_cols = ['order', 'Student\'s name', 'MC', 'nMC', 'nnMC']
         new_order_cols = first_cols + [col for col in multipleGraders_df.columns if col not in first_cols]
@@ -260,6 +282,12 @@ if 'regrading_start' not in ss:
     ss.regrading_start = pd.Timestamp.now()
 if 'df_combinedForFig' not in ss:
     ss.df_combinedForFig = None
+if 'graderDailySummary_df' not in ss:
+    ss.graderDailySummary_df = None
+if 'regraderDailySummary_df' not in ss:
+    ss.regraderDailySummary_df = None
+if 'uploaded_fileName' not in ss:
+    ss.uploaded_fileName = None
 
 st.title('Analyze Grader Activity')
 
@@ -296,6 +324,25 @@ if st.session_state['allActivity_df'] is None:
     )
 else:
     st.write('#### :gray[All activity already uploaded.]')
+    
+    text_str = 'The button below will archive the daily activity to the root of your Microscope archive. '
+    text_str += 'Because of security limitations, streamlit does not \'remember\' which folder you uploaded '
+    text_str += 'the analyzed file from.'
+    st.write(text_str)
+    if st.button('Archive Daily Activity to Excel', type = 'primary'):
+        fileName = 'DailySum_' + ss.uploaded_fileName
+        relativePath = ss['toml_dict']['user']['archive_location'][2:] # Chop off ~
+        path_folders = [item.strip() for item in relativePath.split('/')]
+        archive_file_path = Path.home()
+        for folder in path_folders:
+            archive_file_path = archive_file_path / folder            
+        archive_file_path = archive_file_path / fileName
+        archive_file_path.parent.mkdir(parents=True, exist_ok=True) # Ensure the parent directory exists
+        with pd.ExcelWriter(archive_file_path, mode = 'w',engine='xlsxwriter') as writer:
+            # Write each dataframe to a different worksheet
+            ss.graderDailySummary_df.to_excel(writer, sheet_name='Daily_Grading', index=False)
+            if ss.regrades_df is not None:
+                ss.regraderDailySummary_df.to_excel(writer, sheet_name='Daily_Regrading', index=False)
     
     st.write(f'Regrading started {ss.regrading_start.strftime("%b %d, %Y at %I:%M %p")}')
     
@@ -342,9 +389,19 @@ else:
         median_min = ss.graderSummary_df['Grading time/student (min)'].median()
         total_hrs = ss.graderSummary_df['Grading time (hr)'].sum()
         total_students = len(ss.allActivity_df)
-        text_str = (f'Median grading time was {median_hrs} hrs or {median_min} min/student. '
-                    f'Total grading time was {total_hrs} hrs or {60*total_hrs/total_students:.2f} min/student.')
+        text_str = (f'Median grading time was {median_hrs:.1f} hrs or {median_min:.1f} min/student. '
+                    f'Total grading time was {total_hrs:.1f} hrs or {60*total_hrs/total_students:.1f} min/student.')
         st.write(text_str)
+
+    if ss.regrades_df is not None:
+        st.write('### All regrading activity')
+        text_str = 'If the text in a cell is too long to read, double-click for a better view. '
+        st.write(text_str)
+        if 'regrades_df' in ss:
+            st.dataframe(ss['regrades_df'],
+                            hide_index=True, 
+                            column_config={"link": st.column_config.LinkColumn("link", display_text="link")},
+                            row_height=150)
 
     st.write('#### Display all Activity by Grader')
     st.selectbox(
@@ -374,17 +431,5 @@ else:
     
         st.write('#### All Regrading by Grader')
         st.dataframe(ss.oneRegradersActivity_df, hide_index = True)
-    
-    if ss.regrades_df is not None:
-        st.write('### All regrading activity')
-        text_str = 'If the text in a cell is too long to read, double-click for a better view. '
-        st.write(text_str)
-        if 'regrades_df' in ss:
-            st.dataframe(ss['regrades_df'],
-                            hide_index=True, 
-                            column_config={"link": st.column_config.LinkColumn("link", display_text="link")},
-                            row_height=150)
-
         
-
 utils.shared_sidebar()

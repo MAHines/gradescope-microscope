@@ -21,10 +21,11 @@ pg = st.navigation({
     "Modules": [
         st.Page('pages/downloadResults.py', title='Download Gradescope Results'),
         st.Page('pages/analyzeAllActivity.py', title = 'Analyze Grader Activity'),
+        st.Page('pages/combineDailyReports.py', title = 'Combine Daily Grading Reports'),
         st.Page('pages/analyzeGradescopeFolder.py', title = 'Analyze Grades'),
         st.Page('pages/updateGradescopeCredentials.py', title='Update Gradescope Credentials'),
         st.Page('pages/changePrefs.py', title = 'Settings')
-    ]
+    ] 
 })
 
 pg.run()

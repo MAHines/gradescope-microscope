@@ -11,11 +11,13 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from bs4 import BeautifulSoup
 import time
 import utils
 import json
+from pathlib import Path
+
 
 TIMEOUT = 30    # I got occasional timeouts at 10 sec, so upped to 30 sec
 
@@ -83,10 +85,10 @@ def GS_login_user():
                 )
         
         ss['driver'] = driver # Store the driver for later access.
-    except TimeoutException as e:
-        st.write((f"Page load timed out: {e.message}"))
-    except WebDriverException as e:
-        st.write(f"WebDriver exception occurred: {e.message}") # Handle browser crash or network issues
+    except TimeoutException as ex:
+        st.write((f"Page load timed out: {str(ex)}"))
+    except WebDriverException as ex:
+        st.write(f"WebDriver exception occurred: {str(ex)}") # Handle browser crash or network issues
 
 def GS_login():
     """ Logs in to Gradescope either using a stored password or "manually." """
@@ -540,6 +542,9 @@ def get_year():
 
     soup = BeautifulSoup(driver.page_source, 'lxml')
     
+    div = soup.find('h1', class_='courseHeader--title')
+    ss.courseName = div.text
+    
     div = soup.find('h2', class_='courseHeader--term')
     if div is not None:
         term_year = div.text
@@ -547,7 +552,6 @@ def get_year():
         term_year = currentTerm()
     ss.year = int(term_year.split()[-1])
     ss.term = term_year.split()[0]
-    st.write(ss.year, ss.term)
 
 def get_assignments(course_id):
     """ Gets a dictionary of all of the assignments associated with the course_id. Returns
@@ -696,6 +700,8 @@ if 'year' not in ss:
     ss.year = None
 if 'term' not in ss:
     ss.term = None
+if 'courseName' not in ss:
+    ss.courseName = None
 
 st.title('Download Assignment Grading Data')
 
@@ -765,16 +771,37 @@ if ss.activity_df is not None:
     text_str += 'as separate sheets of a single Excel file in your downloads folder '
     text_str += 'using the button below. This avoids the need for multiple csv\'s'
     st.write(text_str) 
-    if st.button('Download to Excel', type = 'primary'):
-        twoWords = ss.downloaded_assignment.split()[:2] # Use first two words of assignment
-        shortAssignmentName  = "_".join(twoWords) 
-        file_name = '~/Downloads/GS_activity_' + shortAssignmentName + '_' + datetime.now().strftime("%b_%d") + '.xlsx'
-        with pd.ExcelWriter(file_name, mode = 'w',engine='xlsxwriter') as writer:
-            # Write each dataframe to a different worksheet
-            ss.activity_df.to_excel(writer, sheet_name='Grading', index=False)
-            if ss.regrades_df is not None:
-                ss.regrades_df.to_excel(writer, sheet_name='Regrading', index=False)
 
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button('Download to Excel', type = 'primary'):
+            twoWords = ss.downloaded_assignment.split()[:2] # Use first two words of assignment
+            shortAssignmentName  = "_".join(twoWords) 
+            fileName = '~/Downloads/GS_activity_' + shortAssignmentName + '_' + datetime.now().strftime("%b_%d") + '.xlsx'
+            with pd.ExcelWriter(fileName, mode = 'w',engine='xlsxwriter') as writer:
+                # Write each dataframe to a different worksheet
+                ss.activity_df.to_excel(writer, sheet_name='Grading', index=False)
+                if ss.regrades_df is not None:
+                    ss.regrades_df.to_excel(writer, sheet_name='Regrading', index=False)
+    with col2:
+        if st.button('Archive to Excel', type = 'primary'):
+            # If the prefs file does not exist, make the default file
+            twoWords = ss.downloaded_assignment.split()[:2] # Use first two words of assignment
+            shortAssignmentName  = "_".join(twoWords) 
+            fileName = 'GS_' + shortAssignmentName + '_' + datetime.now().strftime("%b_%d") + '.xlsx'
+            folderName = str(int(ss.year)) + ss.term
+            relativePath = ss['toml_dict']['user']['archive_location'][2:] # Chop off ~
+            path_folders = [item.strip() for item in relativePath.split('/')]
+            archive_file_path = Path.home()
+            for folder in path_folders:
+                archive_file_path = archive_file_path / folder            
+            archive_file_path = archive_file_path / ss.courseName / folderName / fileName
+            archive_file_path.parent.mkdir(parents=True, exist_ok=True) # Ensure the parent directory exists
+            with pd.ExcelWriter(archive_file_path, mode = 'w',engine='xlsxwriter') as writer:
+                # Write each dataframe to a different worksheet
+                ss.activity_df.to_excel(writer, sheet_name='Grading', index=False)
+                if ss.regrades_df is not None:
+                    ss.regrades_df.to_excel(writer, sheet_name='Regrading', index=False)
                     
     text_str = 'You can use the button below to \'Export Evaluations\' for this assignment. '
     text_str += 'Your Chromium window may say \'insecure download blocked.\' If so, select '

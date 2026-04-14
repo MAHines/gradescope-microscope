@@ -20,6 +20,7 @@ def test_for_new_keys():
     long_str += ' \'Virginia McGhee\', \'Mike Patterson\']'
     ss['toml_dict']['user'].setdefault('use_grader_white_list', False)
     ss['toml_dict']['user'].setdefault('grader_white_list', long_str)
+    ss['toml_dict']['user'].setdefault('archive_location', '~/Documents/Microscope')
     
     # Rewrite prefs if necessary
     if len(ss['toml_dict']['user']) > start_num_keys: # Key added to existing pref file
@@ -37,7 +38,8 @@ def read_prefs():
                         'version': '1.0',
                         'password_login': False,
                         'use_grader_white_list': True,
-                        'grader_white_list': long_str
+                        'grader_white_list': long_str,
+                        'archive_location': '~/Documents/Microscope'
                         }
                     }
         ss['toml_dict'] = toml_dict
@@ -71,6 +73,8 @@ def write_prefs():
     config['user'].add('use_grader_white_list', pwd_item)
     config['user'].add('grader_white_list', toml_dict['user']['grader_white_list'])
     config['user']['grader_white_list'].trivia.comment = '    # White listed graders GS name (e.g., Cynthia Kinsland, Melissa Hines)'
+    config['user'].add('archive_location', toml_dict['user']['archive_location'])
+    config['user']['archive_location'].trivia.comment = '    # Archive location relative to home directory (e.g., ~/Documents/Microscope)'
     config.add(nl())
     
     # Dump the modified configument to a string
