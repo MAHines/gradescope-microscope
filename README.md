@@ -12,13 +12,13 @@ This package uses Selenium, a framework for automating web browsers.
 
 The workflow for analyzing all of the grading in a course is:
 
-1. Make Assigned Activities for course
+1. Make Assigned Activities for course (once per semester)
 
-2. Download Gradescope Results for each graded item and store results in Microscope Archive
+2. Download Gradescope Results for each graded item and store Grader Activity in Microscope Archive
 
-3. Analyze Grader Activity for each graded item and store results in Microscope Archive
+3. Analyze Grader Activity for each graded item and store Daily Grading Report in Microscope Archive
 
-4. Combine Daily Grading Reports for all graded items
+4. Combine all Daily Grading Reports with Assigned Activities
 
 ### Download Gradescope Results
 
